@@ -1,0 +1,93 @@
+services:
+  flight-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: flightdb
+      POSTGRES_USER: flight
+      POSTGRES_PASSWORD: flight_pass
+    volumes:
+      - flight-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight -d flightdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  booking-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bookingdb
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking_pass
+    volumes:
+      - booking-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d bookingdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  flight-migrate:
+    image: flyway/flyway:10-alpine
+    command: -url=jdbc:postgresql://flight-db:5432/flightdb -user=flight -password=flight_pass -locations=filesystem:/flyway/sql migrate
+    volumes:
+      - ./flight-service/migrations:/flyway/sql
+    depends_on:
+      flight-db:
+        condition: service_healthy
+
+  booking-migrate:
+    image: flyway/flyway:10-alpine
+    command: -url=jdbc:postgresql://booking-db:5432/bookingdb -user=booking -password=booking_pass -locations=filesystem:/flyway/sql migrate
+    volumes:
+      - ./booking-service/migrations:/flyway/sql
+    depends_on:
+      booking-db:
+        condition: service_healthy
+
+  flight-service:
+    build:
+      context: ./flight-service
+    environment:
+      DATABASE_URL: postgres://flight:flight_pass@flight-db:5432/flightdb
+      GRPC_PORT: "50051"
+      API_KEY: "secret-api-key"
+      REDIS_ADDR: "redis:6379"
+    depends_on:
+      flight-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "50051:50051"
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: booking-service/Dockerfile
+    environment:
+      DATABASE_URL: postgres://booking:booking_pass@booking-db:5432/bookingdb
+      HTTP_PORT: "8080"
+      FLIGHT_SERVICE_ADDR: "flight-service:50051"
+      API_KEY: "secret-api-key"
+    depends_on:
+      booking-migrate:
+        condition: service_completed_successfully
+      flight-service:
+        condition: service_started
+    ports:
+      - "8080:8080"
+
+volumes:
+  flight-db-data:
+  booking-db-data:
