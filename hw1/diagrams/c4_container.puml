@@ -1,0 +1,83 @@
+@startuml C4_Container_Marketplace
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title C4 Container Diagram Marketplace
+
+LAYOUT_WITH_LEGEND()
+
+Person(buyer, "Покупатель")
+Person(seller, "Продавец")
+
+System_Ext(payment_gw, "Payment Gateway")
+System_Ext(email_sms, "Notification Provider")
+
+System_Boundary(marketplace, "Marketplace Platform") {
+
+    Container(web, "Web / Mobile клиенты", "React / iOS / Android", "UI для покупателей и продавцов")
+
+    Container(gateway, "API Gateway", "Go", "Маршрутизация, TLS, аутентификация, rate limiting")
+
+    Container(user_svc, "User Service", "Go", "Регистрация, профили, роли, JWT")
+    ContainerDb(user_db, "User DB", "PostgreSQL", "users, roles, sessions")
+
+    Container(catalog_svc, "Catalog Service", "Go", "CRUD товаров, категории, остатки, поиск")
+    ContainerDb(catalog_db, "Catalog DB", "PostgreSQL", "products, categories, stock")
+    ContainerDb(search_idx, "Search Index", "Elasticsearch", "Полнотекстовый и фасетный поиск")
+
+    Container(order_svc, "Order Service", "Go", "Создание заказа, статусы, отмена, оркестрация")
+    ContainerDb(order_db, "Order DB", "PostgreSQL", "orders, order_items, status_history")
+
+    Container(payment_svc, "Payment Service", "Go", "Инициирование оплаты, обработка вебхуков, рефанды")
+    ContainerDb(payment_db, "Payment DB", "PostgreSQL", "payments, transactions, refunds")
+
+    Container(notif_svc, "Notification Service", "Go", "Подписка на события, отправка уведомлений")
+    ContainerDb(notif_db, "Notification DB", "PostgreSQL", "templates, delivery_log, prefs")
+
+    Container(feed_svc, "Feed Service", "Python", "Персональная лента товаров, ранкер")
+    ContainerDb(feed_store, "Feed Store", "Redis + ClickHouse", "Кэш ленты и события поведения")
+
+    ContainerQueue(broker, "Event Broker", "Apache Kafka", "Доменные события")
+}
+
+' Клиенты
+Rel(buyer, web, "Использует", "HTTPS")
+Rel(seller, web, "Использует", "HTTPS")
+Rel(web, gateway, "REST / gRPC-Web", "HTTPS")
+
+' Gateway -> сервисы
+Rel(gateway, user_svc, "Auth, профили", "gRPC")
+Rel(gateway, catalog_svc, "Каталог, поиск", "gRPC")
+Rel(gateway, order_svc, "Создание и просмотр заказов", "gRPC")
+Rel(gateway, payment_svc, "Инициирование оплаты", "gRPC")
+Rel(gateway, feed_svc, "Получение ленты", "gRPC")
+
+' Sync межсервисные
+Rel(order_svc, catalog_svc, "Проверка наличия и резерв товара", "gRPC")
+Rel(order_svc, user_svc, "Валидация покупателя", "gRPC")
+Rel(payment_svc, order_svc, "Подтверждение заказа", "gRPC")
+Rel(feed_svc, catalog_svc, "Метаданные товаров", "gRPC")
+
+' БД
+Rel(user_svc, user_db, "Чтение / запись", "SQL")
+Rel(catalog_svc, catalog_db, "Чтение / запись", "SQL")
+Rel(catalog_svc, search_idx, "Индексация и поиск", "HTTP")
+Rel(order_svc, order_db, "Чтение / запись", "SQL")
+Rel(payment_svc, payment_db, "Чтение / запись", "SQL")
+Rel(notif_svc, notif_db, "Чтение / запись", "SQL")
+Rel(feed_svc, feed_store, "Чтение / запись", "Redis / SQL")
+
+' Async через брокер
+Rel(order_svc, broker, "Публикует OrderCreated, OrderCancelled", "Kafka")
+Rel(payment_svc, broker, "Публикует PaymentCompleted, PaymentFailed", "Kafka")
+Rel(catalog_svc, broker, "Публикует ProductUpdated, StockChanged", "Kafka")
+Rel(user_svc, broker, "Публикует UserRegistered", "Kafka")
+
+Rel(broker, notif_svc, "Подписан на доменные события", "Kafka")
+Rel(broker, feed_svc, "Подписан на UserAction, ProductUpdated", "Kafka")
+Rel(broker, payment_svc, "Подписан на OrderCreated", "Kafka")
+
+' Внешние системы
+Rel(payment_svc, payment_gw, "Создание платежа и приём вебхуков", "HTTPS")
+Rel(notif_svc, email_sms, "Отправка уведомлений", "HTTPS")
+
+@enduml

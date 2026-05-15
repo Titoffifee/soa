@@ -1,0 +1,24 @@
+@startuml C4_Context_Marketplace
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title C4 System Context Diagram Marketplace
+
+Person(buyer, "Покупатель", "Просматривает товары, оформляет и оплачивает заказы")
+Person(seller, "Продавец", "Управляет товарами и обрабатывает заказы")
+Person(admin, "Администратор", "Управляет пользователями и модерирует контент")
+
+System(marketplace, "Marketplace Platform", "Каталог, заказы, платежи, уведомления, лента")
+
+System_Ext(payment_gw, "Payment Gateway", "Платёжный провайдер")
+System_Ext(email_sms, "Notification Provider", "Email, SMS, Push")
+System_Ext(identity, "OAuth Provider", "Внешняя аутентификация")
+
+Rel(buyer, marketplace, "Просматривает товары, делает заказы", "HTTPS")
+Rel(seller, marketplace, "Управляет каталогом, обрабатывает заказы", "HTTPS")
+Rel(admin, marketplace, "Администрирует платформу", "HTTPS")
+
+Rel(marketplace, payment_gw, "Инициирует платежи, получает вебхуки", "HTTPS")
+Rel(marketplace, email_sms, "Отправляет уведомления", "HTTPS")
+Rel(marketplace, identity, "Аутентификация пользователей", "OAuth 2.0")
+
+@enduml
